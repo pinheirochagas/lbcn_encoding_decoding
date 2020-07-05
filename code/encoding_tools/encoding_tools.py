@@ -3,8 +3,6 @@ import numpy as np
 import pandas as pd
 import sys
 sys.path.append('/Users/pinheirochagas/Pedro/Stanford/code/lbcn_encoding_decoding/functions/')
-import encoding_functions
-
 from sklearn.preprocessing import scale
 from sklearn.metrics import r2_score
 import sys
@@ -12,29 +10,15 @@ from sklearn import cross_validation as cv
 #####################################################################################################################
 
 
-## Import list of subjects
-s_list = pd.read_csv('/Volumes/LBCN8T_2/Stanford/data/encoding/subject_list.csv')
-
-data_dir = '/Volumes/LBCN8T_2/Stanford/data/encoding/raw/VTCLoc/'
-subject_number = '132'
-
-
-stim = load_stim_features(data_dir, subject_number)
-
-brain = load_brain_features(data_dir, subject_number)
-
-
-
-
 def load_stim_features(data_dir, subject_number):
-    stim = pd.read_csv(data_dir + subject_number + '_stim_features.csv')
-    return stim
+    X = pd.read_csv(data_dir + subject_number + '_stim_features.csv')
+    return X
 
 
 def load_brain_features(data_dir,subject_number):
-    brain_tmp = pd.read_csv(data_dir + subject_number + '_brain_features.csv', header=None)
-    brain = brain_tmp.to_numpy()
-    return brain
+    y = pd.read_csv(data_dir + subject_number + '_brain_features.csv', header=None)
+    y = y.to_numpy()
+    return y
 
 
 def define_trials(stim):
@@ -62,7 +46,7 @@ def delay_features(features_list, stim,  start, stop, step):
     delays = np.arange(start, stop + step, step)
     n_delays = int(len(delays))
 
-    X_all = np.zeros((stim.shape[0], n_delays), int)
+    X_delay = np.zeros((stim.shape[0], n_delays), int)
 
     for fi in range(0, len(features_list)):
         print(len(features_list))
@@ -89,11 +73,12 @@ def delay_features(features_list, stim,  start, stop, step):
         X_env = X_delayed.reshape([X_delayed.shape[0], -1, X_delayed.shape[-1]])
         X = np.hstack(X_env).T
         print(X.shape)
-        X_all = np.append(X_all, X, axis=1)
+        X_delay = np.append(X_delay, X, axis=1)
 
-    X_all = X_all[:, n_delays - 1:-1]
-    print(X_all.shape)
-    return X_all
+    X_delay = X_delay[:, n_delays - 1:-1]
+    print(X_delay.shape)
+    print(n_delays)
+    return X_delay, delays
 
 
 def cross_validator(trials, n_folds):
@@ -102,9 +87,9 @@ def cross_validator(trials, n_folds):
     return cross_val_iterator
 
 
-def fit_encoding_model(model, cross_val_iterator, y, X, X_all):
+def fit_encoding_model(model, cross_val_iterator, y, X, X_delay):
     scores_all = np.zeros([y.shape[1], cross_val_iterator.n_folds])
-    coefs_all = np.zeros([y.shape[1], X.shape[1], cross_val_iterator.n_folds])
+    coefs_all = np.zeros([y.shape[1], X_delay.shape[1], cross_val_iterator.n_folds])
     intercept_all = np.zeros([y.shape[1], cross_val_iterator.n_folds])
     scores_cv = np.zeros(y.shape[1])
     counter = 0
@@ -114,8 +99,14 @@ def fit_encoding_model(model, cross_val_iterator, y, X, X_all):
         y_tt = y[X['trials'].isin(tt)]
 
         # Pull the training / testing data for the stim features
-        X_tr = X_all[X['trials'].isin(tr)]
-        X_tt = X_all[X['trials'].isin(tt)]
+        X_tr = X_delay[X['trials'].isin(tr)]
+        X_tt = X_delay[X['trials'].isin(tt)]
+
+        # Scale all the features
+        X_tr = scale(X_tr)
+        X_tt = scale(X_tt)
+        y_tr = scale(y_tr)
+        y_tt = scale(y_tt)
 
         # Fit the model, and use it to predict on new data
         model.fit(X_tr, y_tr)
@@ -133,4 +124,17 @@ def fit_encoding_model(model, cross_val_iterator, y, X, X_all):
     scores_all = np.mean(scores_all, axis=1)
     coefs_all = np.mean(coefs_all, axis=2)
     intercept_all = np.mean(intercept_all, axis=1)
-    return scores_all, coefs_all, intercept_all
+    return model, scores_all, coefs_all, intercept_all
+
+
+def single_trials_prediciton(model, y, X, X_delay, trials):
+    r2_scores_all = np.zeros([y.shape[1], trials])
+    #scores_all[:] = np.nan
+    for ft in range (1, trials):
+        X_pred = X_delay[X['trials']==ft]
+        y_pred = model.predict(X_pred)
+        y_true =  y[X['trials']==ft]
+        r2_scores_all[:, ft] = r2_score(scale(y_true), scale(y_pred), multioutput='raw_values')
+    return r2_scores_all
+
+

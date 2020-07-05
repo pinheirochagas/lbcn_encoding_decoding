@@ -3,27 +3,11 @@ import numpy as np
 import pandas as pd
 import sys
 sys.path.append('/Users/pinheirochagas/Pedro/Stanford/code/lbcn_encoding_decoding/functions/')
-import encoding_functions
-
 from sklearn.preprocessing import scale
 from sklearn.metrics import r2_score
 import sys
 from sklearn import cross_validation as cv
 #####################################################################################################################
-
-
-## Import list of subjects
-s_list = pd.read_csv('/Volumes/LBCN8T_2/Stanford/data/encoding/subject_list.csv')
-
-data_dir = '/Volumes/LBCN8T_2/Stanford/data/encoding/raw/VTCLoc/'
-subject_number = '132'
-
-
-stim = load_stim_features(data_dir, subject_number)
-
-brain = load_brain_features(data_dir, subject_number)
-
-
 
 
 def load_stim_features(data_dir, subject_number):
@@ -93,7 +77,7 @@ def delay_features(features_list, stim,  start, stop, step):
 
     X_all = X_all[:, n_delays - 1:-1]
     print(X_all.shape)
-    return X_all
+    return X_all, n_delays
 
 
 def cross_validator(trials, n_folds):
