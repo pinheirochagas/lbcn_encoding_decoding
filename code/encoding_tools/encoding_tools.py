@@ -1,13 +1,8 @@
-### import libraries
 import numpy as np
 import pandas as pd
-import sys
-sys.path.append('/Users/pinheirochagas/Pedro/Stanford/code/lbcn_encoding_decoding/functions/')
 from sklearn.preprocessing import scale
 from sklearn.metrics import r2_score
-import sys
 from sklearn import cross_validation as cv
-#####################################################################################################################
 
 
 def load_stim_features(data_dir, subject_number):
@@ -34,11 +29,12 @@ def define_trials(stim):
 
 
 def select_features(task):
-    features_list = {'MMR': {'math', 'memory'},
-                     'Memoria': {'math', 'memory'},
-                     'VTCLoc': {'faces','numbers', 'words'}}
-    features = list(features_list[task])
-    return features
+    features_lists = {'MMR': ['math', 'memory'],
+                     'Memoria': ['math', 'memory'],
+                     'VTCLoc': ['faces','numbers', 'words', 'bodies', 'buildings_scenes', 'falsefonts', 'logos',
+                                'objects', 'scrambled_images', 'shapes']}
+    features_list = features_lists[task]
+    return features_list
 
 
 def delay_features(features_list, stim,  start, stop, step):
@@ -49,9 +45,9 @@ def delay_features(features_list, stim,  start, stop, step):
     X_delay = np.zeros((stim.shape[0], n_delays), int)
 
     for fi in range(0, len(features_list)):
-        print(len(features_list))
-        print(fi)
-        print(features_list[fi])
+        #print(len(features_list))
+        #print(fi)
+        #print(features_list[fi])
         fs = 500
         features = np.array(stim.loc[:, features_list[fi]])  # result
         times = np.shape(np.unique(stim.loc[:, 'time']))
@@ -72,12 +68,12 @@ def delay_features(features_list, stim,  start, stop, step):
         # Concatenate back the delayed features
         X_env = X_delayed.reshape([X_delayed.shape[0], -1, X_delayed.shape[-1]])
         X = np.hstack(X_env).T
-        print(X.shape)
+        #print(X.shape)
         X_delay = np.append(X_delay, X, axis=1)
 
     X_delay = X_delay[:, n_delays - 1:-1]
-    print(X_delay.shape)
-    print(n_delays)
+    #print(X_delay.shape)
+    #print(n_delays)
     return X_delay, delays
 
 
@@ -126,15 +122,31 @@ def fit_encoding_model(model, cross_val_iterator, y, X, X_delay):
     intercept_all = np.mean(intercept_all, axis=1)
     return model, scores_all, coefs_all, intercept_all
 
+def corr_vec(X,Y):
+    Xs = X - X.mean(axis=0)
+    Xs /= np.linalg.norm(Xs, axis=0) + 1e-9
+    Ys = Y - Y.mean(axis=0)
+    Ys /= np.linalg.norm(Ys, axis=0) + 1e-9
 
-def single_trials_prediciton(model, y, X, X_delay, trials):
-    r2_scores_all = np.zeros([y.shape[1], trials])
+    corrs = np.einsum("ij, ij -> j", Xs, Ys)
+    return corrs
+
+
+def single_trials_prediciton(model, y, X, X_delay, trials, score):
+    scores_all = np.zeros([y.shape[1], trials])
+    trials_all = np.arange(0, trials)+1
     #scores_all[:] = np.nan
-    for ft in range (1, trials):
-        X_pred = X_delay[X['trials']==ft]
+    for ft in range(0, trials):
+        X_pred = X_delay[X['trials']==trials_all[ft]]
         y_pred = model.predict(X_pred)
-        y_true =  y[X['trials']==ft]
-        r2_scores_all[:, ft] = r2_score(scale(y_true), scale(y_pred), multioutput='raw_values')
-    return r2_scores_all
+        y_true =  y[X['trials']==trials_all[ft]]
+        if score == 'r2':
+            scores_all[:, ft] = r2_score(scale(y_true), scale(y_pred), multioutput='raw_values')
+        elif score == 'corr':
+            scores_all[:, ft] = corr_vec(y_true, y_pred)
+    return scores_all
+
+
+
 
 
