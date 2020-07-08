@@ -3,6 +3,8 @@ import pandas as pd
 from sklearn.preprocessing import scale
 from sklearn.metrics import r2_score
 from sklearn import cross_validation as cv
+import pickle
+
 
 
 def load_stim_features(data_dir, subject_number):
@@ -28,18 +30,32 @@ def define_trials(stim):
     return trials, times
 
 
-def select_features(task):
-    features_lists = {'MMR': ['math', 'memory'],
-                     'Memoria': ['math', 'memory'],
-                     'VTCLoc': ['faces','numbers', 'words', 'bodies', 'buildings_scenes', 'falsefonts', 'logos',
-                                'objects', 'scrambled_images', 'shapes']}
-    features_list = features_lists[task]
+def get_stim_features(data_dir, task, subj):
+    basic_X = pd.read_csv(data_dir + subj + '_basic_stim_features.csv')
+
+    features_lists = {'MMR': ['operand_min', 'operand_max', 'cross_decade', 'abs_deviant'],
+                     'Memoria': ['operand_min', 'operand_max', 'cross_decade', 'abs_deviant', 'number_format'],
+                     'VTCLoc': []}
+
+    # 'VTCLoc': ['faces', 'numbers', 'words', 'bodies', 'buildings_scenes', 'falsefonts', 'logos',
+    #            'objects', 'scrambled_images', 'shapes']}
+
+    features_list = features_lists[task] + list(basic_X['features'])
     return features_list
 
 
-def delay_features(features_list, stim,  start, stop, step):
+def get_delay_params(task):
+    # start, stop, step
+    delay_params = {'MMR': {'start': 0, 'stop': 4, 'step': 0.02},
+                    'Memoria': {'start': 0, 'stop': 4, 'step': 0.02},
+                    'VTCLoc': {'start': 0, 'stop': 0.85, 'step': 0.02}}
+    delay_params = delay_params[task]
+    return delay_params
+
+
+def delay_features(features_list, stim,  dp):
     # Add delayed features
-    delays = np.arange(start, stop + step, step)
+    delays = np.arange(dp['start'], dp['stop'] + dp['step'], dp['step'])
     n_delays = int(len(delays))
 
     X_delay = np.zeros((stim.shape[0], n_delays), int)
@@ -62,7 +78,7 @@ def delay_features(features_list, stim,  start, stop, step):
         X_delayed = np.zeros((trials, 1, n_delays, times))
         for i in range(trials):
             for ii in range(n_delays):
-                window = [int(np.round(delays[ii] * fs)), int(np.round((delays[ii] + step) * fs))]
+                window = [int(np.round(delays[ii] * fs)), int(np.round((delays[ii] + dp['step']) * fs))]
                 X_delayed[i, 0, ii, window[0]:window[1]] = int(np.unique(features_reshape[i]))
 
         # Concatenate back the delayed features
@@ -147,6 +163,42 @@ def single_trials_prediciton(model, y, X, X_delay, trials, score):
     return scores_all
 
 
+def fit_model_across_subj(model, cross_val_folds, task, subj, data_dir, result_dir):
+    print('processing subject ' + subj + ' for task ' + task)
+    # Load stim and brain features
+    print('loading stim features')
+    X = load_stim_features(data_dir, subj)
+    print('loading brain features')
+    y = load_brain_features(data_dir, subj)
 
+    # Get trials and times from X features
+    trials, times = define_trials(X)
 
+    # Get feature list from the task
+    features_list = get_stim_features(data_dir, task, subj)
+
+    # Define delayed features
+    # times:
+    delay_params = get_delay_params(task)
+    X_delay, delays = delay_features(features_list, X, delay_params)
+    #print('preparting delayed features')
+
+    # Fit cross validated model
+    print('training and fitting the model')
+    cross_val_iterator = cross_validator(trials, cross_val_folds)
+    model, scores_all, coefs_all, intercept_all = fit_encoding_model(model, cross_val_iterator, y, X, X_delay)
+
+    # Save model and model parameters
+    fn_model = result_dir + subj + '_model.sav';
+    pickle.dump(model, open(fn_model, 'wb'))
+    np.savetxt(result_dir + subj + '_scores.csv', scores_all, delimiter=',')
+    np.savetxt(result_dir + subj + '_coefs.csv', coefs_all, delimiter=',')
+    np.savetxt(result_dir + subj + '_intercept.csv', intercept_all, delimiter=',')
+    #print('done! and saving the results')
+
+    # Get the scores for single trials across all electrodes
+    score_metric = 'corr'  # Pearson's r, r2_score from scikit learn can also be used
+    score_single_trials = single_trials_prediciton(model, y, X, X_delay, trials, 'corr')
+    np.savetxt(result_dir + subj + '_scores_single_trials.csv', score_single_trials, delimiter=',')
+    print('done!')
 
