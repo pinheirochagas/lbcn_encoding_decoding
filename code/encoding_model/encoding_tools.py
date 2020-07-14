@@ -6,6 +6,7 @@ from sklearn.preprocessing import scale
 from sklearn.metrics import r2_score
 import pickle
 import os
+from encoding_model.pychagas import corr_vec
 
 
 def load_stim_brain_features(data_dir, subject_number):
@@ -52,18 +53,28 @@ def get_delay_params(task):
     return delay_params
 
 
-def delay_features(features_list, stim,  dp):
+def delay_features(features_list, X, dp):
+    '''
+    Create delayed versions of stim features
+
+    Parameters
+    ----------
+    features_list : list of stimuli features
+    X : full stim features
+    dp : delay parameters
+    '''
+
     # Generates delayed versions of the stimuli features
     delays = np.arange(dp['start'], dp['stop'] + dp['step'], dp['step'])
     n_delays = int(len(delays))
-    X_delay = np.zeros((stim.shape[0], n_delays), int)
+    X_delay = np.zeros((X.shape[0], n_delays), int)
 
     for fi in range(0, len(features_list)):
         fs = 500
-        features = np.array(stim.loc[:, features_list[fi]])  # result
-        times = np.shape(np.unique(stim.loc[:, 'time']))
+        features = np.array(X.loc[:, features_list[fi]])  # result
+        times = np.shape(np.unique(X.loc[:, 'time']))
         times = int(times[0])
-        r, c = np.shape(stim)
+        r, c = np.shape(X)
         trials = int(r / times)
 
         # Reshape features
@@ -73,15 +84,16 @@ def delay_features(features_list, stim,  dp):
         X_delayed = np.zeros((trials, 1, n_delays, times))
         for i in range(trials):
             for ii in range(n_delays):
-                window = [int(np.round(delays[ii] * fs)), int(np.round((delays[ii] + dp['step']) * fs))]
+                window = [int(np.round(delays[ii] * fs)),
+                          int(np.round((delays[ii] + dp['step']) * fs))]
                 X_delayed[i, 0, ii, window[0]:window[1]] = int(np.unique(features_rp[i]))
 
         # Concatenate back the delayed features
         X_env = X_delayed.reshape([X_delayed.shape[0], -1,
                                    X_delayed.shape[-1]])
-        X = np.hstack(X_env).T
+        X_tmp = np.hstack(X_env).T
         # print(X.shape)
-        X_delay = np.append(X_delay, X, axis=1)
+        X_delay = np.append(X_delay, X_tmp, axis=1)
 
     X_delay = X_delay[:, n_delays - 1:-1]
     # print(X_delay.shape)
@@ -90,20 +102,35 @@ def delay_features(features_list, stim,  dp):
 
 
 def cross_validation_iterator(iterator, n_splits):
-    if iterator == 'Kfold':
+    cv_iterator = []
+    if iterator == 'KFold':
         cv_iterator = KFold(n_splits=n_splits,
-                                   shuffle=True)
+                            shuffle=True)
     return cv_iterator
 
 
 def fit_encoding_model(model, cv_iterator, y, X, X_delay):
+    """
+    Fit an encoding model using the temporal receptive field framework
+
+    References
+    ----------
+    1. de Heer et al. (2017). The Hierarchical Cortical Organization of Human
+    Speech Processing. ​The Journal of Neuroscience:
+    The Official Journal of the Society for Neuroscience​, ​37​(27), 6539–6557.
+
+    2. Holdgraf et al. (2017). Encoding and Decoding Models in Cognitive
+    Electrophysiology. ​Frontiers in Systems Neuroscience​, ​11,​ 61.
+
+    """
+    trials = np.unique(X['trials'])
     scores_all = np.zeros([y.shape[1], cv_iterator.n_splits])
     coefs_all = np.zeros([y.shape[1], X_delay.shape[1],
                          cv_iterator.n_splits])
     intercept_all = np.zeros([y.shape[1], cv_iterator.n_splits])
     scores_cv = np.zeros(y.shape[1])
     counter = 0
-    for train, test in cv_iterator:
+    for train, test in cv_iterator.split(trials):
         # Pull the training / testing data for the brain features
         y_train = y[X['trials'].isin(train)]
         y_test = y[X['trials'].isin(test)]
@@ -122,12 +149,9 @@ def fit_encoding_model(model, cv_iterator, y, X, X_delay):
         model.fit(X_train, y_train)
         predictions = model.predict(X_test)
 
-        single_trial_score = single_trials_prediciton(model, y_test, X,
-                                                      X_delay, trials, score)
-
         # Get the average (R2)
         for i in range(0, y.shape[1]):
-            scores_cv[i] = r2_score(y_train[:, i], predictions[:, i])
+            scores_cv[i] = r2_score(y_test[:, i], predictions[:, i])
 
         scores_all[:, counter] = scores_cv
         coefs_all[:, :, counter] = model.coef_
@@ -140,17 +164,32 @@ def fit_encoding_model(model, cv_iterator, y, X, X_delay):
     return model, scores_all, coefs_all, intercept_all
 
 
-def corr_vec(X, Y):
-    Xs = X - X.mean(axis=0)
-    Xs /= np.linalg.norm(Xs, axis=0) + 1e-9
-    Ys = Y - Y.mean(axis=0)
-    Ys /= np.linalg.norm(Ys, axis=0) + 1e-9
+def single_trials_prediciton(model, y, X, X_delay, trials, scoring):
+    """
+    Single trial scoring per stimuli feature with cross-validated scores
 
-    corrs = np.einsum("ij, ij -> j", Xs, Ys)
-    return corrs
+    Parameters
+    ----------
+    model : fitted model
+    y : full brain features
+    X : full stim features
+    X_delay : delayed stim features
+    trials : list of numbered trials
+    scoring : scoring metric, scikit learn r2_score or Pearson's correlation
 
+    Returns
+    -------
+    Single trial scores per stimuli feature
 
-def single_trials_prediciton(model, y, X, X_delay, trials, score):
+    Notes
+    -----
+
+    To discuss
+    ----------
+    Should this function be inside each cv fold?
+    Which is the best scoring metric?
+
+    """
     scores_all = np.zeros([y.shape[1], trials])
     trials_all = np.arange(0, trials)+1
     # scores_all[:] = np.nan
@@ -158,17 +197,21 @@ def single_trials_prediciton(model, y, X, X_delay, trials, score):
         X_pred = X_delay[X['trials'] == trials_all[ft]]
         y_pred = model.predict(X_pred)
         y_true = y[X['trials'] == trials_all[ft]]
-        if score == 'r2':
+        if scoring == 'r2_score':
             scores_all[:, ft] = r2_score(scale(y_true), scale(y_pred),
                                          multioutput='raw_values')
-        elif score == 'corr':
+        elif scoring == 'corr':
             scores_all[:, ft] = corr_vec(y_true, y_pred)
     return scores_all
 
 
-def fit_model_across_subj(model, cross_val_n_splits, task, subj,
-                          data_dir, result_dir):
-    print('processing subject ' + subj + ' for task ' + task)
+def fit_model_across_subj(model, cv, single_trial_scoring, task, subj,
+                          data_dir, result_dir, save_results=True):
+    """
+    Wrapped function to fit models across subjects.
+    Usefull for for loops or Parallel (joblib).
+    """
+    print(f'processing subject {subj} for task {task}')
     X, y = load_stim_brain_features(data_dir, subj)
 
     # Get trials and times from X features
@@ -185,24 +228,32 @@ def fit_model_across_subj(model, cross_val_n_splits, task, subj,
 
     # Fit cross validated model
     print('training and fitting the model')
-    cv_iterator = cross_validation_iterator('KFold', 5):
-    model, scores_all, coefs_all, intercept_all = fit_encoding_model(model, cv_iterator, y, X, X_delay)
-    
-    # Save model and model parameters
-    fn_model = result_dir + subj + '_model.sav'
-    pickle.dump(model, open(fn_model, 'wb'))
-    
-    with open(filename, 'wb') as f:
-              pickle.dump(model, f)
-    
-    
-    np.savetxt(result_dir + subj + '_scores.csv', scores_all, delimiter=',')
-    np.savetxt(result_dir + subj + '_coefs.csv', coefs_all, delimiter=',')
-    np.savetxt(result_dir + subj + '_intercept.csv', intercept_all, delimiter=',')
-    # print('done! and saving the results')
+    cv_iterator = cross_validation_iterator(cv['iterator'], cv['n_splits'])
+    model, scores, coefs, intercepts = fit_encoding_model(model, cv_iterator,
+                                                          y, X, X_delay)
+    # Scores single trials with cross validaded coefficients
+    score_single_trials = single_trials_prediciton(model, y, X, X_delay,
+                                                   trials,
+                                                   single_trial_scoring)
+    # Save model and results
+    if save_results:
+        save_model_results(subj, result_dir, model, scores,
+                           coefs, intercepts, score_single_trials)
+    return model, scores, coefs, intercepts, score_single_trials
 
-    # Get the scores for single trials across all electrodes
-    score_metric = 'corr'  # Pearson's r, r2_score from scikit learn can also be used
-    score_single_trials = single_trials_prediciton(model, y, X, X_delay, trials, score_metric)
-    np.savetxt(result_dir + subj + '_scores_single_trials.csv', score_single_trials, delimiter=',')
-    print('done!')
+
+def save_model_results(subj, result_dir, model, scores, coefs,
+                       intercepts, score_single_trials):
+    """
+    Save model and results per subject
+    """
+    fn_model = result_dir + subj + '_model.sav'
+    with open(fn_model, 'wb') as f:
+        pickle.dump(model, f)
+    np.savetxt(result_dir + subj + '_scores.csv', scores, delimiter=',')
+    np.savetxt(result_dir + subj + '_coefs.csv', coefs, delimiter=',')
+    np.savetxt(result_dir + subj + '_intercept.csv', intercepts, delimiter=',')
+    # print('done! and saving the results')
+    np.savetxt(result_dir + subj + '_scores_single_trials.csv',
+               score_single_trials, delimiter=',')
+    print(f'model saved for subject {subj}')
