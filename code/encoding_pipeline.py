@@ -13,7 +13,8 @@ from encoding_model.encoding_tools import (fit_model_across_subj,
 from encoding_model.viz import (plot_coefficients,
                                 plot_single_trials_fit,
                                 combine_single_trial_scores,
-                                plot_single_trial_scores)
+                                plot_single_trial_scores,
+                                plot_RainCloud_sorted)
 from sklearn.linear_model import Ridge
 from joblib import Parallel, delayed
 import pandas as pd
@@ -22,6 +23,11 @@ import os
 # %%
 # Set paths and get list of subjects for a particular task
 root_dir = '/Volumes/LBCN8T_2/Stanford/data/encoding/'
+# Russ, you will need to create a root dir which with raw and results dirs
+# In each dir (raw and results) you will also need a dir for each task:
+# VTCLoc: object localizer.
+# MMR: simultaneouly presented calculations and memory statementes.
+# Memoria: sequencially presented calculations and memory statementes.
 task = 'VTCLoc'
 data_dir = os.path.join(root_dir, 'raw', task)
 result_dir = os.path.join(root_dir, 'results', task)
@@ -65,42 +71,7 @@ plot_single_trials_fit(model_final, electrode, X, y, X_delay,
 electrode = 77
 data = combine_single_trial_scores(electrode, X, features_list,
                                    model_final['score_single_trials'])
-plot_single_trial_scores(data)
-
-# %%
-import numpy as np
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
-sns.set(style="white", rc={"axes.facecolor": (0, 0, 0, 0)})
-
-# Initialize the FacetGrid object
-pal = sns.cubehelix_palette(len(features_list), rot=-.25, light=.7)
-g = sns.FacetGrid(data, row="data", hue="labels", aspect=15, height=.5, palette=pal)
-
-# Draw the densities in a few steps
-g.map(sns.kdeplot, "data", clip_on=False, shade=True, alpha=1, lw=1.5, bw=.2)
-g.map(sns.kdeplot, "data", clip_on=False, color="w", lw=2, bw=.2)
-g.map(plt.axhline, y=0, lw=2, clip_on=False)
-
-
-# Define and use a simple function to label the plot in axes coordinates
-def label(x, color, label):
-    ax = plt.gca()
-    ax.text(0, .2, label, fontweight="bold", color=color,
-            ha="left", va="center", transform=ax.transAxes)
-
-
-g.map(label, "x")
-
-# Set the subplots to overlap
-g.fig.subplots_adjust(hspace=-.25)
-
-# Remove axes details that don't play well with overlap
-g.set_titles("")
-g.set(yticks=[])
-g.despine(bottom=True, left=True)
-
+plot_RainCloud_sorted(data, 'median')
 
 # %%
 # Run and a bunch of subjects in parallel
