@@ -9,12 +9,18 @@ import os
 from encoding_model.pychagas import corr_vec
 
 
-def load_stim_brain_features(data_dir, subject_number):
-    # X = stimuli features
-    # y = brain features
-    file_tmp = os.path.join(data_dir, (subject_number + '_stim_features.csv'))
+def load_stim_brain_features(data_dir, subject_ID):
+    '''
+    Load stimuli and brain features
+
+    Returns
+    ----------
+    X : stimuli features
+    y : brain features
+    '''
+    file_tmp = os.path.join(data_dir, (subject_ID + '_stim_features.csv'))
     X = pd.read_csv(file_tmp)
-    file_tmp = os.path.join(data_dir, (subject_number + '_brain_features.csv'))
+    file_tmp = os.path.join(data_dir, (subject_ID + '_brain_features.csv'))
     y = pd.read_csv(file_tmp, header=None)
     y = y.to_numpy()
     return X, y
@@ -239,7 +245,11 @@ def fit_model_across_subj(model, cv, single_trial_scoring, task, subj,
     if save_results:
         save_model_results(subj, result_dir, model, scores,
                            coefs, intercepts, score_single_trials)
-    return model, scores, coefs, intercepts, score_single_trials
+
+    model_final = {'model': model, 'scores': scores, 'coefficients': coefs,
+                   'intercepts': intercepts,
+                   'score_single_trials': score_single_trials}
+    return model_final
 
 
 def save_model_results(subj, result_dir, model, scores, coefs,
