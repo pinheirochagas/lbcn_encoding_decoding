@@ -97,16 +97,8 @@ def plot_single_trial_scores(data_frame):
 
 
 def plot_RainCloud_sorted(df, descriptive_stats):
-    descriptive_data = np.zeros(df.shape[0])
-
-    for i in range(0, df.shape[0]):
-        if descriptive_stats == 'median':
-            descriptive_data[i] = np.median(df.data[df.labels == df.labels[i]])
-        elif descriptive_stats == 'mean':
-            descriptive_data[i] = np.mean(df.data[df.labels == df.labels[i]])
-    df['descriptive_data'] = descriptive_data
+    df['descriptive_data'] = df.groupby('labels').pipe(lambda x: x.data.transform(descriptive_stats))
     df_sorted = df.sort_values(by=['descriptive_data'], ascending=False)
-
     # RainCloud plots
     f, ax = plt.subplots(figsize=(20, 8))
     pt.RainCloud(data=df_sorted, x='labels', y='data', ax=ax,
