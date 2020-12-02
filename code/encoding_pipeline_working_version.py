@@ -45,7 +45,7 @@ single_trial_scoring = 'corr'
 subject_ID = '57'  # choose a given subject
 model_final = fit_model_across_subj(model, cv, single_trial_scoring, task,
                                     subject_ID, data_dir, result_dir,
-                                    save_results=False)
+                                    save_results=True)
 
 # %%
 # Load subject's brain and stimuli features
@@ -290,5 +290,73 @@ my_gen = (i*i for i in range(10))
 
 # %%
 [np.array for i in np.array([1,2])]
+
+# %%
+def gini(array):
+    """Calculate the Gini coefficient of a numpy array."""
+    # based on bottom eq: http://www.statsdirect.com/help/content/image/stat0206_wmf.gif
+    # from: http://www.statsdirect.com/help/default.htm#nonparametric_methods/gini.htm
+    array = array.flatten() #all values are treated equally, arrays must be 1d
+    if np.amin(array) < 0:
+        array -= np.amin(array) #values cannot be negative
+    array += 0.0000001 #values cannot be 0
+    array = np.sort(array) #values must be sorted
+    index = np.arange(1,array.shape[0]+1) #index per array element
+    n = array.shape[0]#number of array elements
+    return ((np.sum((2 * index - n  - 1) * array)) / (n * np.sum(array))) #Gini coefficient
+
+# %%
+gini(np.array([0,0,1]))
+
+# %%np.ones((1000))
+a = np.ones((1000))
+
+# %%
+b = int(np.array([1,2]))
+
+# %%
+gini(b)
+
+
+
+# %%
+_='_=%r;print (_%%_)';print (_%_) 
+
+
+# %%
+print (_&_)
+
+# %%
+exec(s:='print("exec(s:=%r)"%s)')
+
+# %%
+s='s=%r;print s%%s';print(s%s)
+
+
+# %%
+repr('a')
+
+# %%
+var = '1 == 2'
+eval(repr(var))
+
+
+
+# %%
+exec('1 == 2') == True
+exec('1 == 2') == False
+
+
+# %%
+eval('1 == 2') == False
+'1 == 2' == False
+
+# %%
+eval('1 == 2') == False
+
+
+# %%
+'1 == 2' == True
+
 
 # %%
